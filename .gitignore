@@ -3,5 +3,4 @@
 ./convertcv.exe
 ./potrace.exe
 
-./__pycache__/*
-./__init__/*
+__pycache__
