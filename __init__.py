@@ -5,10 +5,12 @@ class RobotApp(tk.Tk):
         super().__init__()
         self.title("Robot Operator")
         self.geometry("1000x600")
-
+        
         # لیبل وضعیت
-        self.status_label = ttk.Label(self, text="✅ آماده")
+        self.status_label = ttk.Label(self, text="📌 آماده برای عملیات")
         self.status_label.pack(fill=tk.X, pady=5)
+
+
 
         self.orders_tree = ttk.Treeview(self, columns=("id","name","email","address","status"), show="headings")
         self.orders_tree.heading("id", text="Order ID")

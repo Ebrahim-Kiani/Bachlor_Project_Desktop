@@ -10,6 +10,7 @@ point_counter = 0
 delayTime = 0.3
 minDistance = 0.5
 
+import os
 import re, math
 from optparse import OptionParser, OptionError
 from os.path import expanduser,dirname
@@ -170,15 +171,15 @@ def instructionCodeMaker(params):
     myString = ""
     for p in params:
         try:
-            if p is "up":
+            if p == "up":
                 myString += "p{0}.z=p{0}.z+10\n".format(point_counter)
-            elif p is "down":
+            elif p == "down":
                 myString += "p{0}.z=p{0}.z-10\n".format(point_counter)
-            elif p is "delay":
+            elif p == "delay":
                 myString += ("dly " + str(delayTime) + "\n")
-            elif p is "mvs":
+            elif p == "mvs":
                 myString += "mvs p{0}\n".format(point_counter)
-            elif p is "mov":
+            elif p == "mov":
                 myString += "mov p{0}\n".format(point_counter)
             else:
                 raise Exception("Bad parameter \'{0}\'".format(p))
@@ -274,7 +275,7 @@ if __name__ == '__main__':
     if len(args) != 0 or options.input_file is None or options.output_file is None:
         raise OptionError("Please use -h or --help")
 
-    system("echo " + options.input_file + " " + options.output_file[:-4] + "2.bmp | " + dirname(__file__) + "convertcv")
+    system("echo " + options.input_file + " " + options.output_file[:-4] + "2.bmp | " + os.path.join(dirname(__file__), "convertcv.exe"))
     system("potrace -a -100 --svg " + options.output_file[:-4] + "2.bmp")
     
     setStats(options.min_distance, options.delay_time)

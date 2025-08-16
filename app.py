@@ -8,6 +8,11 @@ from pathlib import Path
 import shutil
 import robot_sender
 
+import converter
+import config
+
+
+
 class RobotApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -63,16 +68,15 @@ class RobotApp(tk.Tk):
         if not selected:
             return
         order_id = self.orders_tree.item(selected[0])['values'][0]
-        self.status_label.config(text=f"📦 جزئیات سفارش {order_id} در حال بارگذاری ...")
-        self.update_idletasks()
-
         for i in self.details_tree.get_children():
             self.details_tree.delete(i)
         details = api_client.get_order_details(order_id)
         for d in details:
-            self.details_tree.insert("", "end", values=(d['id'], d['image_url'], d['final_price']))
-
-        self.status_label.config(text="✅ جزئیات بارگذاری شدند")
+            self.details_tree.insert(
+                "",
+                "end",
+                values=(d['id'], d['vector_svg'], d['final_price'], d['image_url'])
+            )
 
     def send_selected_detail(self):
         selected = self.details_tree.selection()
@@ -80,33 +84,60 @@ class RobotApp(tk.Tk):
             messagebox.showerror("Error", "Select a detail first")
             return
 
-        detail_id, image_url, price = self.details_tree.item(selected[0])['values']
+        detail_id, svg_url, price, png_url = self.details_tree.item(selected[0])['values']
 
+        os.makedirs(config.DOWNLOAD_DIR, exist_ok=True)
+        os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+
+        # 1️⃣ دانلود فایل SVG
+        svg_path = os.path.join(config.DOWNLOAD_DIR, Path(svg_url).name)
+        self.status_label.config(text="⬇️ در حال دانلود فایل SVG ...")
+        self.update_idletasks()
         try:
-            self.status_label.config(text="📥 در حال دانلود فایل ...")
-            self.update_idletasks()
-
-            os.makedirs(config.DOWNLOAD_DIR, exist_ok=True)
-            local_path = os.path.join(config.DOWNLOAD_DIR, Path(image_url).name)
-
-            r = requests.get(image_url, stream=True)
+            r = requests.get(svg_url, stream=True)
             r.raise_for_status()
-            with open(local_path, 'wb') as f:
+            with open(svg_path, 'wb') as f:
                 shutil.copyfileobj(r.raw, f)
-
-            self.status_label.config(text="🤖 در حال ارسال به RoboExplorer ...")
-            self.update_idletasks()
-
-            robot_sender.send_with_gui(local_path)
-
-            self.status_label.config(text="✅ ارسال شد")
-            api_client.mark_detail_done(detail_id)
-            messagebox.showinfo("Done", f"Detail {detail_id} sent to robot.")
-
         except Exception as e:
-            print("Error sending detail:", e)
-            self.status_label.config(text="❌ خطا در ارسال")
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror("Error", f"خطا در دانلود فایل: {e}")
+            self.status_label.config(text="❌ خطا در دانلود SVG")
+            return
+
+        # 2️⃣ تبدیل SVG به MB4
+        self.status_label.config(text="⚙️ در حال تبدیل به MB4 ...")
+        self.update_idletasks()
+        try:
+            mb4_path = converter.convert_svg_to_mb4(svg_path, config.OUTPUT_DIR)
+        except Exception as e:
+            messagebox.showerror("Error", f"خطا در تبدیل به MB4: {e}")
+            self.status_label.config(text="❌ خطا در تبدیل MB4")
+            return
+
+        # 3️⃣ ارسال فایل MB4 به ربات
+        self.status_label.config(text="📤 در حال ارسال به ربات ...")
+        self.update_idletasks()
+        try:
+            robot_sender.send_with_gui(mb4_path)
+        except Exception as e:
+            messagebox.showerror("Error", f"خطا در ارسال به ربات: {e}")
+            self.status_label.config(text="❌ خطا در ارسال به ربات")
+            return
+
+        # 4️⃣ ثبت جزئیات به عنوان انجام‌شده در سرور
+        self.status_label.config(text="📝 در حال ثبت وضعیت سفارش ...")
+        self.update_idletasks()
+        try:
+            api_client.mark_detail_done(detail_id)
+        except Exception as e:
+            messagebox.showerror("Error", f"خطا در ثبت وضعیت: {e}")
+            self.status_label.config(text="❌ خطا در ثبت وضعیت")
+            return
+
+        # ✅ پایان
+        self.status_label.config(text="✅ ارسال با موفقیت انجام شد")
+        messagebox.showinfo("Done", f"Detail {detail_id} sent to robot.")
+
+
 
 
 if __name__ == "__main__":
