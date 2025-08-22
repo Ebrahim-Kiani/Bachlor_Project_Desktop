@@ -1,0 +1,3 @@
+def safe_name(name: str) -> str:
+    """نام کاربر را برای ذخیره‌سازی امن می‌کند"""
+    return "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
