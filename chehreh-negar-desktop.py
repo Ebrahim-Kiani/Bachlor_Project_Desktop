@@ -9,11 +9,62 @@ from PyQt5.QtWidgets import (
     QLabel, QHBoxLayout, QLineEdit, QFormLayout, QMessageBox
 )
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+
 
 def safe_name(name):
     return "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
 
+
+# ----------------- Worker Thread -----------------
+class ProcessWorker(QThread):
+    finished = pyqtSignal(str, str)   # (result, message)
+
+    def __init__(self, order, detail, base_dir):
+        super().__init__()
+        self.order = order
+        self.detail = detail
+        self.base_dir = base_dir
+
+    def run(self):
+        try:
+            bmp_url = self.detail.get("image_url")
+            if not bmp_url:
+                self.finished.emit("error", "❌ عکس جزئیات موجود نیست.")
+                return
+
+            bmp_name = os.path.basename(bmp_url)
+            bmp_file = os.path.join(self.base_dir, bmp_name)
+
+            # دانلود فایل
+            r = requests.get(bmp_url, timeout=5)
+            r.raise_for_status()
+            with open(bmp_file, 'wb') as f:
+                f.write(r.content)
+
+            mb4_file = bmp_file.replace(".bmp", ".mb4")
+
+            # شمارش معکوس ۶ ثانیه‌ای برای ESC
+            def press_esc():
+                pyautogui.press("esc")
+
+            timer = threading.Timer(6.0, press_esc)
+            timer.start()
+
+            subprocess.run(
+                ["python", "convert.py", "-i", bmp_file, "-o", mb4_file, "-v"],
+                check=True,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+
+            timer.cancel()
+            self.finished.emit("success", f"✅ جزئیات سفارش {self.detail.get('id')} پردازش شد:\n{mb4_file}")
+
+        except Exception as e:
+            self.finished.emit("error", f"❌ خطا در پردازش: {e}")
+
+
+# ----------------- UI اصلی -----------------
 class OrderApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -25,8 +76,6 @@ class OrderApp(QWidget):
 
         # ---- سمت چپ: تنظیمات سرور + لیست سفارش‌ها
         left_layout = QVBoxLayout()
-
-        # تنظیمات سرور
         server_form = QFormLayout()
         self.input_host = QLineEdit("127.0.0.1")
         self.input_port = QLineEdit("8000")
@@ -44,7 +93,6 @@ class OrderApp(QWidget):
         self.orders_list = QListWidget()
         self.orders_list.currentRowChanged.connect(self.fetch_order_details)
         left_layout.addWidget(self.orders_list)
-
         main_layout.addLayout(left_layout, 2)
 
         # ---- سمت راست: جزئیات سفارش + تصویر + پردازش
@@ -71,12 +119,11 @@ class OrderApp(QWidget):
         # ---- داده‌ها
         self.orders = []
         self.details = []
+        self.worker = None  # Worker Thread
 
     # ---- آدرس کامل سرور
     def server_url(self):
-        host = self.input_host.text().strip()
-        port = self.input_port.text().strip()
-        return f"http://{host}:{port}"
+        return f"http://{self.input_host.text().strip()}:{self.input_port.text().strip()}"
 
     # ---- دریافت سفارش‌ها
     def fetch_orders(self):
@@ -93,15 +140,21 @@ class OrderApp(QWidget):
             self.orders = data
             self.orders_list.clear()
             for o in self.orders:
-                self.orders_list.addItem(f"{o.get('id','-')} - {o.get('full_name','-')} ({o.get('status','-')})")
+                address = o.get("address", {})
+                if isinstance(address, dict):
+                    full_address = address.get("full", "----")
+                else:
+                    # یعنی address رشته بوده
+                    full_address = str(address)
+                self.orders_list.addItem(
+                    f"{o.get('id','-')} - {o.get('full_name','-')} ({o.get('status','-')}) | {full_address}"
+                )
+
             QMessageBox.information(self, "موفقیت", f"✅ دریافت {len(self.orders)} سفارش موفق بود.")
 
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             QMessageBox.critical(self, "خطا", f"❌ خطا در دریافت سفارش‌ها:\n{e}")
-        except ValueError as e:
-            QMessageBox.critical(self, "خطا", f"❌ خطا در پردازش JSON سفارش‌ها:\n{e}")
 
-    # ---- دریافت جزئیات سفارش
     # ---- دریافت جزئیات سفارش
     def fetch_order_details(self, index):
         if index < 0 or index >= len(self.orders):
@@ -110,34 +163,21 @@ class OrderApp(QWidget):
         order_id = order.get('id')
         if not order_id:
             return
-
         try:
             url = f"{self.server_url()}/order/api/order/{order_id}/details/"
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
             data = resp.json()
+            self.details = data.get("details", [])
 
-            # استخراج لیست واقعی جزئیات از کلید 'details'
-            details_list = data.get('details', [])
-            if not isinstance(details_list, list):
-                self.details_list.clear()
-                self.detail_image.clear()
-                QMessageBox.warning(self, "خطا", f"داده جزئیات لیست نیست:\n{details_list}")
-                return
-
-            self.details = details_list
             self.details_list.clear()
             for d in self.details:
                 self.details_list.addItem(f"جزئیات {d.get('id','-')} - قیمت: {d.get('final_price','-')} تومان")
 
             self.detail_image.clear()
             self.detail_image.setText("📷 جزئیات را انتخاب کنید")
-
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             QMessageBox.critical(self, "خطا", f"❌ خطا در دریافت جزئیات:\n{e}")
-        except ValueError as e:
-            QMessageBox.critical(self, "خطا", f"❌ خطا در پردازش JSON جزئیات:\n{e}")
-
 
     # ---- نمایش عکس جزئیات
     def show_detail_image(self, index):
@@ -154,7 +194,7 @@ class OrderApp(QWidget):
                 self.detail_image.setPixmap(
                     pixmap.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 )
-            except requests.exceptions.RequestException:
+            except:
                 self.detail_image.setText("❌ خطا در دریافت عکس")
         else:
             self.detail_image.setText("بدون عکس")
@@ -170,47 +210,20 @@ class OrderApp(QWidget):
         order = self.orders[order_index]
         detail = self.details[detail_index]
 
-        order_id = order.get('id')
         user_name = safe_name(order.get('full_name', 'user'))
-
         base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), user_name)
         os.makedirs(base_dir, exist_ok=True)
 
-        bmp_url = detail.get('image_url')
-        if not bmp_url:
-            QMessageBox.warning(self, "خطا", "❌ عکس جزئیات موجود نیست.")
-            return
+        # اجرای Worker
+        self.worker = ProcessWorker(order, detail, base_dir)
+        self.worker.finished.connect(self.on_process_finished)
+        self.worker.start()
 
-        bmp_name = os.path.basename(bmp_url)
-        bmp_file = os.path.join(base_dir, bmp_name)
-
-        try:
-            r = requests.get(bmp_url, timeout=5)
-            r.raise_for_status()
-            with open(bmp_file, 'wb') as f:
-                f.write(r.content)
-        except requests.exceptions.RequestException as e:
-            QMessageBox.critical(self, "خطا", f"❌ خطا در دانلود BMP:\n{e}")
-            return
-
-        mb4_file = bmp_file.replace(".bmp", ".mb4")
-        try:
-            timer = threading.Timer(3.0, lambda: pyautogui.press("esc"))
-            timer.start()
-
-            subprocess.run(
-                ["python", "convert.py", "-i", bmp_file, "-o", mb4_file, "-v"],
-                check=True,
-                cwd=os.path.dirname(os.path.abspath(__file__))
-            )
-
-            timer.cancel()
-            QMessageBox.information(self, "موفقیت", f"✅ جزئیات سفارش {detail.get('id')} پردازش شد:\n{mb4_file}")
-
-        except subprocess.CalledProcessError as e:
-            QMessageBox.critical(self, "خطا", f"❌ خطا در اجرای convert.py:\n{e}")
-        except Exception as e:
-            QMessageBox.critical(self, "خطا", f"❌ خطای عمومی:\n{e}")
+    def on_process_finished(self, status, message):
+        if status == "success":
+            QMessageBox.information(self, "موفقیت", message)
+        else:
+            QMessageBox.critical(self, "خطا", message)
 
 
 if __name__ == "__main__":
