@@ -52,7 +52,7 @@ class ProcessWorker(QThread):
             timer.start()
 
             subprocess.run(
-                ["python", "convert.py", "-i", bmp_file, "-o", mb4_file, "-v"],
+                ["python", "generator.py", "-i", bmp_file, "-o", mb4_file, "-v"],
                 check=True,
                 cwd=os.path.dirname(os.path.abspath(__file__))
             )

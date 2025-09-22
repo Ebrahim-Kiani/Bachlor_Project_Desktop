@@ -83,7 +83,13 @@ class OrderApp(QWidget):
 
     # ---- آدرس کامل سرور
     def server_url(self):
-        return f"http://{self.input_host.text().strip()}:{self.input_port.text().strip()}"
+        host = self.input_host.text().strip()
+        if not host.startswith("http"):
+            host = f"http://{host}"
+
+        port = self.input_port.text().strip()
+        return f"{host}:{port}" if port else host
+
 
     # ---- دریافت سفارش‌ها
     def fetch_orders(self):

@@ -1,9 +1,3 @@
-'''
-Created on Aug 13, 2012
-
-@author: ebrahim radi
-'''
-
 board_width = 205
 board_height = 135
 point_counter = 0
@@ -164,7 +158,7 @@ def image2BoardTransfer(mList, mTransferX=-95, mTransferY=255):
 def pointCodeMaker(mX, mY):
     global point_counter
     point_counter += 1
-    default_point = ",237.60,179.280,-0.120,-180.000,0.000,0.000)(7,0)\n"
+    default_point = ",240.00,179.280,-0.120,-180.000,0.000,0.000)(7,0)\n"
     return "p{0}=({1:.3f},{2:.3f}{3}".format(point_counter, mX, mY, default_point)
 
 def instructionCodeMaker(params):
@@ -253,7 +247,7 @@ def setStats(mDistance, dTime=None, pCounter=None):
     return
 
 if __name__ == '__main__':    
-    usage = "Usage: python3 convert.py [options] ..."
+    usage = "Usage: python3 generator.py [options] ..."
     optParser = OptionParser(usage=usage)
     optParser.add_option("-i","--input",action='store',type='string',dest='input_file',
                          help='Get path of an input file. \"SVG\"')
@@ -325,11 +319,11 @@ def convert_main(input_bmp: str, output_mb4: str, convert_exe: str):
         bmp2_tmp = os.path.join(tmpdir, "output2.bmp")
         shutil.copy(input_bmp, bmp_tmp)
 
-        # اجرای convertcv.exe روی مسیر کوتاه
+        # اجرای generator.exe روی مسیر کوتاه
         try:
             subprocess.run([convert_exe, bmp_tmp, bmp2_tmp], check=True)
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"خطا در اجرای convertcv.exe: {e}")
+            raise RuntimeError(f"خطا در اجرای convretcv.exe: {e}")
 
         # اجرای potrace
         svg_tmp = os.path.join(tmpdir, "output2.svg")
